@@ -19,6 +19,7 @@ import ssl
 import threading
 import time
 import wave
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -646,6 +647,54 @@ NO_CLIENT = {
 }
 
 
+_RATE_LIMITED = {"start", "message", "voice_note", "leak_test_start"}
+_RATE_MESSAGE = "Demo limit reached, please try again later"
+_RATE_GLOBAL: deque = deque()
+_RATE_SESSION: dict = {}
+_RATE_LOCK = threading.Lock()
+_RATE_WINDOW_SECONDS = 3600
+
+
+def _visitor_address(handler) -> str:
+    """Identify the visitor behind a proxy: first X-Forwarded-For address."""
+    forwarded = handler.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return handler.client_address[0]
+
+
+def _rate_limit_hit(client_address: str) -> bool:
+    """True when a model-calling request must be refused under demo limits.
+
+    Both caps are rolling 60-minute windows so visitors are never blocked
+    forever; old timestamps are pruned on every check.
+    """
+    try:
+        global_limit = max(1, int(os.environ.get("RATE_LIMIT_GLOBAL_PER_HOUR", "60")))
+    except ValueError:
+        global_limit = 60
+    try:
+        session_limit = max(1, int(os.environ.get("RATE_LIMIT_PER_SESSION", "20")))
+    except ValueError:
+        session_limit = 20
+    now = time.monotonic()
+    with _RATE_LOCK:
+        while _RATE_GLOBAL and now - _RATE_GLOBAL[0] > _RATE_WINDOW_SECONDS:
+            _RATE_GLOBAL.popleft()
+        if len(_RATE_GLOBAL) >= global_limit:
+            return True
+        personal = _RATE_SESSION.get(client_address)
+        if personal is None:
+            personal = _RATE_SESSION[client_address] = deque()
+        while personal and now - personal[0] > _RATE_WINDOW_SECONDS:
+            personal.popleft()
+        if len(personal) >= session_limit:
+            return True
+        _RATE_GLOBAL.append(now)
+        personal.append(now)
+        return False
+
+
 def _member_may_view_image(
     store: FamilyStore, family_id: str, member_id: str, filename: str
 ) -> bool:
@@ -763,6 +812,9 @@ class Handler(BaseHTTPRequestHandler):
         if name not in NEEDS_CLIENT and name not in NO_CLIENT:
             self._send(404, {"error": "not found"})
             return
+        if name in _RATE_LIMITED and _rate_limit_hit(_visitor_address(self)):
+            self._send(429, {"error": _RATE_MESSAGE})
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -810,6 +862,8 @@ font-family:Inter,system-ui,-apple-system,"Segoe UI",Helvetica,sans-serif}
 h1,h2,.dash-greeting,.invite-title{font-family:Fraunces,Georgia,serif}
 header{background:var(--teal-dark);color:#fff;padding:1em 1em .9em;
 border-bottom:6px solid var(--coral)}
+.demobanner{background:var(--sage-soft);color:var(--ink);text-align:center;
+font-size:.85rem;padding:.5em 1em}
 header .wrap{max-width:920px;margin:0 auto}
 header h1{margin:0;font-size:1.4em}
 header p{margin:.2em 0 0;color:#cde8e1;font-size:.9em}
@@ -1237,6 +1291,7 @@ main.consumer:has(> .view:not([hidden]):not(#view-signin)){--mw:1200px;max-width
 .day{min-height:36px}.trow{gap:1em;padding:1.2em .2em}}
 @media (min-width:641px) and (max-width:900px){.quick-actions{grid-template-columns:repeat(3,1fr)}}
 </style></head><body>
+<div class="demobanner">Demo family: the Riveras. Try opening as Maya and asking: When is the next birthday?</div>
 <header><div class="wrap topbar">
 <div class="brand"><span class="logo">hai</span><span class="famname">The Riveras</span></div>
 <div class="row hact">
@@ -3525,14 +3580,21 @@ setInterval(() => {
 
 def main(argv: list | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args(argv)
+    if args.port is not None:
+        port = args.port
+    else:
+        try:
+            port = int(os.environ.get("PORT", "8766"))
+        except ValueError:
+            port = 8766
     try:
         seed_all(ROOT)
     except Exception as error:
         print(f"seed skipped: {error}", flush=True)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Hai Family Agent console: http://127.0.0.1:{args.port}", flush=True)
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    print(f"Hai Family Agent console: http://0.0.0.0:{port}", flush=True)
     server.serve_forever()
 
 

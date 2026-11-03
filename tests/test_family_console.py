@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
+from collections import deque
+from types import SimpleNamespace
 
 from family_agent import console
 from tests import family_support as f
@@ -59,7 +62,7 @@ class FamilyConsoleTest(unittest.TestCase):
         )
         self.assertEqual(run["steps"], live["steps"])
         self.assertIn("run_steps", console.HTML)
-        self.assertIn("Hai is working", console.HTML)
+        self.assertIn("hai is working", console.HTML)
         self.assertIn("Checked the family calendar", console.HTML)
         self.assertIn("Asked for your OK", console.HTML)
         continued = console.api_message(
@@ -290,6 +293,59 @@ class FamilyConsoleTest(unittest.TestCase):
         )
         self.assertEqual("ava_rivera", added["member"]["id"])
         self.assertEqual(["maya", "leo"], added["member"]["parents"])
+
+    def test_demo_banner_names_family_member_and_question(self) -> None:
+        self.assertIn("Demo family: the Riveras.", console.HTML)
+        self.assertIn("Maya", console.HTML)
+        self.assertIn("When is the next birthday?", console.HTML)
+        members = [m["id"] for m in console.FamilyStore(self.root, "riveras").members()]
+        self.assertIn("maya", members)
+
+    def test_rate_limit_blocks_model_endpoints(self) -> None:
+        import os
+
+        console._RATE_GLOBAL.clear()
+        console._RATE_SESSION.clear()
+        os.environ["RATE_LIMIT_GLOBAL_PER_HOUR"] = "100"
+        os.environ["RATE_LIMIT_PER_SESSION"] = "2"
+        try:
+            self.assertFalse(console._rate_limit_hit("10.0.0.1"))
+            self.assertFalse(console._rate_limit_hit("10.0.0.1"))
+            self.assertTrue(console._rate_limit_hit("10.0.0.1"))
+            self.assertFalse(console._rate_limit_hit("10.0.0.2"))
+            # Old timestamps roll off: the same visitor is allowed again.
+            old = time.monotonic() - console._RATE_WINDOW_SECONDS - 1
+            console._RATE_SESSION["10.0.0.1"] = deque([old, old])
+            self.assertFalse(console._rate_limit_hit("10.0.0.1"))
+        finally:
+            del os.environ["RATE_LIMIT_GLOBAL_PER_HOUR"]
+            del os.environ["RATE_LIMIT_PER_SESSION"]
+            console._RATE_GLOBAL.clear()
+            console._RATE_SESSION.clear()
+        console._RATE_GLOBAL.clear()
+        console._RATE_SESSION.clear()
+        os.environ["RATE_LIMIT_GLOBAL_PER_HOUR"] = "1"
+        os.environ["RATE_LIMIT_PER_SESSION"] = "100"
+        try:
+            self.assertFalse(console._rate_limit_hit("10.0.0.3"))
+            self.assertTrue(console._rate_limit_hit("10.0.0.4"))
+            self.assertEqual(
+                "Demo limit reached, please try again later", console._RATE_MESSAGE
+            )
+        finally:
+            del os.environ["RATE_LIMIT_GLOBAL_PER_HOUR"]
+            del os.environ["RATE_LIMIT_PER_SESSION"]
+            console._RATE_GLOBAL.clear()
+            console._RATE_SESSION.clear()
+
+    def test_visitor_address_prefers_forwarded_for(self) -> None:
+        proxied = SimpleNamespace(
+            headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"},
+            client_address=("9.9.9.9", 1234),
+        )
+        self.assertEqual("1.2.3.4", console._visitor_address(proxied))
+        direct = SimpleNamespace(headers={}, client_address=("9.9.9.9", 1234))
+        self.assertEqual("9.9.9.9", console._visitor_address(direct))
 
 
 if __name__ == "__main__":
