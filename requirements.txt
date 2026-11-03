@@ -1,0 +1,2 @@
+# ./helper setup installs these into agent/.venv.
+openai>=2.0,<3

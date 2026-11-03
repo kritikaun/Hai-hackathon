@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The agent's own Python: ./helper setup creates .venv here and installs requirements.txt.
+if [[ -z "${PYTHON:-}" ]]; then
+  if [[ -x .venv/bin/python ]]; then PYTHON=.venv/bin/python; else PYTHON=python3; fi
+fi
+COMMAND="${1:-help}"
+shift || true
+
+load_env() {
+  # CASE_DIR set in the environment wins over .env: CASE_DIR=../cases/other ./helper setup
+  local case_dir="${CASE_DIR:-}"
+  if [[ -f .env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+  fi
+  if [[ -n "$case_dir" ]]; then export CASE_DIR="$case_dir"; fi
+}
+
+case "$COMMAND" in
+  setup)
+    [[ -f .env ]] || cp .env.example .env
+    [[ -x .venv/bin/python ]] || python3 -m venv .venv
+    .venv/bin/python -m pip install --quiet --disable-pip-version-check -r requirements.txt
+    PYTHON=.venv/bin/python
+    load_env
+    "$PYTHON" scripts/reset_case.py
+    "$PYTHON" scripts/preflight.py --expect-release initial --check-key
+    ;;
+  reset)
+    load_env
+    "$PYTHON" scripts/reset_case.py "$@"
+    ;;
+  run)
+    load_env
+    "$PYTHON" -m legal_agent "$@"
+    ;;
+  review)
+    "$PYTHON" scripts/review.py "$@"
+    ;;
+  describe)
+    load_env
+    "$PYTHON" scripts/describe.py "$@"
+    ;;
+  verify)
+    load_env
+    "$PYTHON" scripts/verify.py "$@"
+    ;;
+  branch)
+    load_env
+    "$PYTHON" scripts/branch.py "$@"
+    ;;
+  fseed)
+    load_env
+    "$PYTHON" -m family_agent seed "$@"
+    ;;
+  frun)
+    load_env
+    "$PYTHON" -m family_agent run "$@"
+    ;;
+  fresume)
+    load_env
+    "$PYTHON" -m family_agent resume "$@"
+    ;;
+  freview)
+    load_env
+    "$PYTHON" -m family_agent review "$@"
+    ;;
+  fconsole)
+    load_env
+    "$PYTHON" -m family_agent.console "$@"
+    ;;
+  fleak)
+    load_env
+    "$PYTHON" scripts/leak_test.py "$@"
+    ;;
+  test)
+    load_env
+    if [[ "${1:-}" == "--verification" ]]; then export VERIFICATION=on; else export VERIFICATION=off; fi
+    "$PYTHON" scripts/preflight.py --expect-release auto
+    "$PYTHON" -m unittest discover -s tests
+    ;;
+  *)
+    cat >&2 <<'USAGE'
+Usage: ./helper COMMAND
+  setup                                  create .venv, copy the case's documents, check MODEL_API_KEY
+  test [--verification]                  offline tests (no API calls)
+  run [--turns N] [--resume RUN_ID]      run the agent, or continue a run
+  verify RUN_ID --memo | --checklist     run the verification checks on a finished run
+  branch RUN_ID                          continue a run from its checklist with verification on
+  review RUN_ID --approve | --reject --notes "..." | --answer R1 --notes "..."
+  reset [--clear-runs]                   reset the inbox to the case's documents
+  describe                               what the agent gets (JSON; used by the console)
+  fseed [--family ID]                    seed a family workspace with fictional demo data
+  frun --family ID --member MID --message "..." [--turns N]
+  fresume RUN_ID [--message "..."]       continue a family conversation
+  freview --family ID [--list | --approve AP | --reject AP --by MID --notes "..."]
+  fconsole [--port 8766]                 local demo console for the family agent
+  fleak                                  live leak test (40 prompts, real models, takes minutes)
+USAGE
+    exit 2
+    ;;
+esac
