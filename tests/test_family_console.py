@@ -290,6 +290,18 @@ class FamilyConsoleTest(unittest.TestCase):
             self.assertIn("'%s'" % box, console.HTML)
         self.assertIn("refreshAll();", console.HTML)
 
+    def test_chat_list_renders_once(self) -> None:
+        # Regression: the Family "Message" button rendered the chat member
+        # list twice (list + list). renderConvoList clears the container
+        # first and carries a generation guard so overlapping renders are
+        # harmless; the Message button takes the single openMemberChat path.
+        self.assertIn("box.innerHTML = '';", console.HTML)
+        self.assertIn("S.convoListGen", console.HTML)
+        self.assertIn("gen !== S.convoListGen", console.HTML)
+        self.assertIn("function openMemberChat(id) {", console.HTML)
+        self.assertIn("b.onclick = () => openMemberChat(m.id);", console.HTML)
+        self.assertNotIn("loadPeople().then(loadThread)", console.HTML)
+
     def test_hidden_events_never_reach_excluded_members(self) -> None:
         members = [
             "maya",

@@ -1527,6 +1527,7 @@ async function renderConvoList() {
   const box = el('convoList');
   const me = S.me;
   if (!me) { box.innerHTML = ''; return; }
+  const gen = (S.convoListGen = (S.convoListGen || 0) + 1);
   box.innerHTML = '';
   const others = (S.members || []).filter(m => m.id !== me);
   const previews = {};
@@ -1540,7 +1541,7 @@ async function renderConvoList() {
         : null;
     } catch (e) { previews[m.id] = null; }
   }));
-  if (me !== S.me) return;
+  if (me !== S.me || gen !== S.convoListGen) return;
   const haiBtn = document.createElement('button');
   haiBtn.className = 'convo' + (S.convo === 'hai' ? ' active' : '');
   haiBtn.innerHTML = '<span class="convo-avatar hai-logo">hai</span>'
@@ -1595,6 +1596,13 @@ function renderConvoListSel() {
   el('convoList').querySelectorAll('.convo').forEach(b => {
     b.classList.toggle('active', b.dataset.id === S.convo);
   });
+}
+function openMemberChat(id) {
+  S.peer = id;
+  S.convo = id;
+  showView('chat');
+  renderConvoListSel();
+  el('msg').focus();
 }
 function updateChips() {
   const n = el('convoLog').querySelectorAll('.bubble.me, .bubble.agent').length;
@@ -3364,7 +3372,7 @@ function renderProfile(id) {
   } else {
     const b = document.createElement('button');
     b.textContent = 'Message them';
-    b.onclick = () => { showView('chat'); subtab('people'); S.peer = m.id; loadPeople().then(loadThread); };
+    b.onclick = () => openMemberChat(m.id);
     row.append(b);
   }
   box.append(av, h, meta, row);
