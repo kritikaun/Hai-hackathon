@@ -53,7 +53,8 @@ class FamilyToolsTest(unittest.TestCase):
             self.root, self.sofia, "get_family_events", {"from_date": f.REF_DATE}
         )
         titles = [e["title"] for e in sofia["events"]]
-        self.assertIn("Sofia's 12th birthday", titles)
+        self.assertIn("Leo and Maya's anniversary", titles)
+        self.assertNotIn("Sofia's 12th birthday", titles)
         self.assertFalse(any("Surprise" in t for t in titles))
         leo = call(self.root, self.leo, "get_family_events", {"from_date": f.REF_DATE})
         self.assertTrue(any("Surprise" in e["title"] for e in leo["events"]))

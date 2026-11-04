@@ -117,14 +117,24 @@ class FamilyStoreTest(unittest.TestCase):
     def test_upcoming_events_are_sorted_and_authorized(self) -> None:
         events = self.store.upcoming_events("sofia", ref_date=f.REF_DATE)
         self.assertEqual(
-            ["Sofia's 12th birthday", "Leo and Maya's anniversary"],
+            ["Leo and Maya's anniversary"],
             [e["title"] for e in events],
         )
         leo_titles = [
             e["title"]
             for e in self.store.upcoming_events("leo", ref_date=f.REF_DATE)
         ]
-        self.assertIn("Surprise party for Sofia (secret)", leo_titles)
+        self.assertEqual(
+            ["Surprise party for Sofia (secret)", "Sofia's 12th birthday"],
+            leo_titles,
+        )
+        self.assertEqual(
+            ["Sofia's 12th birthday"],
+            [
+                e["title"]
+                for e in self.store.upcoming_events("maya", ref_date=f.REF_DATE)
+            ],
+        )
 
     def test_restricted_events_reach_shared_with_but_not_honoree(self) -> None:
         self.store.save_memory(

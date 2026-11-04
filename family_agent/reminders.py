@@ -28,31 +28,7 @@ def _parse(ref_date: str) -> datetime.date:
         raise ValueError(f"date {ref_date!r} must be YYYY-MM-DD") from None
 
 
-def _recipients_for_event(store, event: dict) -> tuple[list, str]:
-    members = [m["id"] for m in store.members()]
-    linked = next(
-        (m for m in store.data["memories"] if m["id"] == (event.get("memory_id") or "")),
-        None,
-    )
-    people = linked["people"] if linked else []
-    owner = event.get("owner", "")
-    visibility = event.get("visibility", "shared")
-    if visibility == "private":
-        return [owner], f"a private event, only for {owner}"
-    if visibility == "restricted" or event.get("kind") == "surprise_party":
-        know = [owner] + [
-            m for m in (linked.get("shared_with", []) if linked else []) if m != owner
-        ]
-        return know, "a secret, only for those in the know"
-    kind = event.get("kind") or ""
-    if kind in ("birthday", "anniversary"):
-        excluded = [p for p in people if p in members]
-        detail = " and ".join(excluded) if excluded else "the honoree"
-        return (
-            [m for m in members if m not in excluded],
-            f"{kind}, everyone except {detail}",
-        )
-    return list(members), "a family celebration, the whole family"
+from .store import _recipients_for_event
 
 
 def _suggest_event(title: str, date: str, days: int, reason: str, kind: str = "") -> str:

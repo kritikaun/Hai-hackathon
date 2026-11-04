@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import time
 import unittest
@@ -272,13 +273,84 @@ class FamilyConsoleTest(unittest.TestCase):
         self.assertTrue(any(kind == "agent" for kind, _ in texts))
 
     def test_member_switch_clears_previous_chat_in_page_js(self) -> None:
-        # Regression: selecting a different member must not keep showing (or
-        # sending into) the previous member's run/chat in the agent pane.
-        self.assertIn("const changed = S.me !== id;", console.HTML)
-        self.assertIn("if (changed) newChat();", console.HTML)
-        self.assertIn("if (S.chatKey !== key) { S.chatKey = key; newChat(); }", console.HTML)
-        self.assertIn("if (S.chatKey !== key) return;", console.HTML)
-        self.assertIn("if (cur && (r.conversations || []).some(c => c.run_id === cur)) sel.value = cur;", console.HTML)
+        # Regression: switching member must clear the previous member's
+        # rendered state (chat plus dashboard/calendar boxes) so nothing
+        # addressed to them lingers on screen, then reload for the new member.
+        self.assertIn("function clearMemberState()", console.HTML)
+        self.assertIn("clearMemberState();", console.HTML)
+        self.assertIn("el('convoLog').innerHTML = '';", console.HTML)
+        for box in (
+            "dashInsight",
+            "dashNotes",
+            "dashApprovals",
+            "dashCelebrations",
+            "calUpcoming",
+            "calDayList",
+        ):
+            self.assertIn("'%s'" % box, console.HTML)
+        self.assertIn("refreshAll();", console.HTML)
+
+    def test_hidden_events_never_reach_excluded_members(self) -> None:
+        members = [
+            "maya",
+            "leo",
+            "sofia",
+            "eli",
+            "elena",
+            "mateo",
+            "carlos",
+            "lucia",
+        ]
+        store = console.FamilyStore(self.root, "riveras")
+        full = {e["id"]: e for e in store.data["events"]}
+        for member in members:
+            fev = console.api_family_events(
+                self.root, {"family": "riveras", "member": member}
+            )
+            due = console.api_due_reminders(
+                self.root,
+                {"family": "riveras", "member": member, "days_ahead": "30"},
+            )
+            for event in fev["events"]:
+                recipients, _ = console._recipients_for_event(
+                    store, full[event["id"]]
+                )
+                self.assertIn(member, recipients)
+            blob = json.dumps([fev, due])
+            for event in store.data["events"]:
+                recipients, _ = console._recipients_for_event(store, event)
+                if member not in recipients:
+                    self.assertNotIn(event["title"], blob)
+                    self.assertNotIn(event["date"], json.dumps(fev))
+        sofia_blob = json.dumps(
+            [
+                console.api_family_events(
+                    self.root, {"family": "riveras", "member": "sofia"}
+                ),
+                console.api_due_reminders(
+                    self.root,
+                    {"family": "riveras", "member": "sofia", "days_ahead": "30"},
+                ),
+            ]
+        )
+        self.assertNotIn("Sofia's 12th birthday", sofia_blob)
+        for member in ("maya", "leo"):
+            blob = json.dumps(
+                [
+                    console.api_family_events(
+                        self.root, {"family": "riveras", "member": member}
+                    ),
+                    console.api_due_reminders(
+                        self.root,
+                        {
+                            "family": "riveras",
+                            "member": member,
+                            "days_ahead": "30",
+                        },
+                    ),
+                ]
+            )
+            self.assertNotIn("Leo and Maya's anniversary", blob)
 
     def test_add_member_api(self) -> None:
         added = console.api_add_member(

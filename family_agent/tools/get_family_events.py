@@ -1,9 +1,9 @@
 """get_family_events: upcoming birthdays, anniversaries, and family events.
 
-Only events the requesting member is authorized for come back: shared events
-for every member, private or restricted events for the owner plus the linked
-memory's shared_with. Surprise and birthday honorees never receive their own
-event.
+Only events addressed to the requesting member come back: birthdays skip the
+birthday person, anniversaries skip the couple, secrets stay among those in
+the know, shared celebrations go to everyone. Anything hidden from the member
+is never sent.
 """
 
 from __future__ import annotations

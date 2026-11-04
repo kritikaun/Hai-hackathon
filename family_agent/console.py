@@ -36,9 +36,9 @@ from agent_kit.progress import load_progress, record_step
 from agent_kit.settings import transcribe_model
 
 from .loop import LAST_TURN_MESSAGE, MORE_TURNS_MESSAGE, resume_run, run_agent
-from .reminders import _recipients_for_event, due_reminders
+from .reminders import due_reminders
 from .seed import seed_all, seed_family
-from .store import CATEGORIES, FamilyError, FamilyStore
+from .store import CATEGORIES, FamilyError, FamilyStore, _recipients_for_event
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -2012,6 +2012,9 @@ function doSwitch(id) {
   setTimeout(() => {
     setMe(id, true);
     S.profileView = id;
+    refreshImageUrls();
+    refreshAll();
+    refresh();
     main.classList.remove('switching');
     showToast('Now signed in as ' + firstName(memberName(id)) + '.');
   }, 300);
@@ -3015,6 +3018,14 @@ function refreshAll() {
   if (!el('view-profile').hidden) renderProfile(S.profileView || S.me);
   if (S.consoleLoaded) cLoadAll();
 }
+function clearMemberState() {
+  el('convoLog').innerHTML = '';
+  ['dashInsight', 'dashNotes', 'dashApprovals', 'dashCelebrations', 'calUpcoming', 'calDayList'].forEach(id => {
+    const box = el(id);
+    if (box) box.innerHTML = '';
+  });
+  el('chatStatus').textContent = '';
+}
 function setMe(id, openLatest) {
   if (!id) return;
   S.me = id;
@@ -3029,7 +3040,7 @@ function setMe(id, openLatest) {
   S.memCache = [];
   S.memFilter = '';
   newChat();
-  el('convoLog').innerHTML = '';
+  clearMemberState();
   const sendBtn = el('sendBtn');
   sendBtn.disabled = false;
   sendBtn.textContent = 'Send';

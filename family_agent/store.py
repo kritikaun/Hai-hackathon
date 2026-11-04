@@ -49,6 +49,36 @@ def _check_date(value: str) -> str:
     return value
 
 
+def _recipients_for_event(store, event: dict) -> tuple[list, str]:
+    """Who an event is for, and why: birthdays skip the birthday person,
+    anniversaries skip the couple, secrets stay among those in the know,
+    shared celebrations go to everyone."""
+    members = [m["id"] for m in store.members()]
+    linked = next(
+        (m for m in store.data["memories"] if m["id"] == (event.get("memory_id") or "")),
+        None,
+    )
+    people = linked["people"] if linked else []
+    owner = event.get("owner", "")
+    visibility = event.get("visibility", "shared")
+    if visibility == "private":
+        return [owner], f"a private event, only for {owner}"
+    if visibility == "restricted" or event.get("kind") == "surprise_party":
+        know = [owner] + [
+            m for m in (linked.get("shared_with", []) if linked else []) if m != owner
+        ]
+        return know, "a secret, only for those in the know"
+    kind = event.get("kind") or ""
+    if kind in ("birthday", "anniversary"):
+        excluded = [p for p in people if p in members]
+        detail = " and ".join(excluded) if excluded else "the honoree"
+        return (
+            [m for m in members if m not in excluded],
+            f"{kind}, everyone except {detail}",
+        )
+    return list(members), "a family celebration, the whole family"
+
+
 class FamilyStore:
     def __init__(self, root: Path, family_id: str) -> None:
         family_id = (family_id or "").strip()
@@ -349,7 +379,9 @@ class FamilyStore:
         upcoming = [
             dict(e)
             for e in self.data["events"]
-            if e["date"] >= ref and self.authorized_for_event(member_id, e)
+            if e["date"] >= ref
+            and self.authorized_for_event(member_id, e)
+            and member_id in _recipients_for_event(self, e)[0]
         ]
         upcoming.sort(key=lambda e: (e["date"], e["title"]))
         return upcoming[:limit]
